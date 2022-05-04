@@ -1,10 +1,50 @@
+use std::env;
+use std::error::Error;
+use std::fs;
+
+use glob::glob;
+
 mod eval;
 mod match_;
 mod pattern;
 
-fn main() {}
+fn main() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = env::args().collect();
+    match args.as_slice() {
+        [_, input, files] => {
+            let files = glob(files)?
+                .filter_map(Result::ok)
+                .filter(|p| p.is_file())
+                .filter_map(|p| Some((p.clone(), fs::read_to_string(p).ok()?)))
+                .collect::<Vec<_>>();
 
-pub fn replace(files: &[&str], input: &str) -> Option<Vec<String>> {
+            let replacements = match replace(
+                &files.iter().map(|(_, f)| f.as_str()).collect::<Vec<_>>(),
+                input.trim(),
+            ) {
+                Some(it) => it,
+                None => return Ok(()),
+            };
+
+            for ((path, content), new_content) in files.iter().zip(replacements) {
+                if content == &new_content {
+                    continue;
+                }
+                fs::write(path, new_content)?;
+                println!("{}", path.display());
+            }
+        }
+        _ => print_help(),
+    }
+
+    Ok(())
+}
+
+fn print_help() {
+    println!("usage: bulke <input> <glob>");
+}
+
+fn replace(files: &[&str], input: &str) -> Option<Vec<String>> {
     let pattern = pattern::parse(input)?;
     let res = files
         .iter()
